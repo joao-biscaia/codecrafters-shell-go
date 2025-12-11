@@ -22,11 +22,18 @@ func exit(splitCommand []string) string {
 	return "error: too many arguments"
 }
 
+func echo(splitCommand []string) string {
+	finalString := strings.Join(splitCommand[1:], " ")
+	return finalString
+}
+
 func processInput(inputString string) string {
 	var splitCommand = strings.Split(inputString[:len(inputString)-1], " ")
 	switch splitCommand[0] {
 	case "exit":
 		return exit(splitCommand)
+	case "echo":
+		return echo(splitCommand)
 	default:
 		return splitCommand[0] + ": command not found"
 	}
