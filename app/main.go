@@ -28,14 +28,17 @@ func echo(splitCommand []string) string {
 }
 
 func processInput(inputString string) string {
-	var splitCommand = strings.Split(inputString[:len(inputString)-1], " ")
-	switch splitCommand[0] {
+	args := strings.Fields(inputString)
+	if len(args) == 0 {
+		return ""
+	}
+	switch args[0] {
 	case "exit":
-		return exit(splitCommand)
+		return exit(args)
 	case "echo":
-		return echo(splitCommand)
+		return echo(args)
 	default:
-		return splitCommand[0] + ": command not found"
+		return inputString + ": command not found"
 	}
 
 }
