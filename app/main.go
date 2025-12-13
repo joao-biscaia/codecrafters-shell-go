@@ -8,43 +8,16 @@ import (
 	"strings"
 )
 
-func exit(splitCommand []string) string {
-	if len(splitCommand) == 2 {
-		exitCode, err := strconv.Atoi(splitCommand[1])
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error reading exit code", err)
-			os.Exit(-1)
-		}
-		os.Exit(exitCode)
-	} else if len(splitCommand) == 1 {
-		os.Exit(0)
-	}
-	return "error: too many arguments"
-}
+type CommandFunc func(args []string) error
 
-func echo(splitCommand []string) string {
-	finalString := strings.Join(splitCommand[1:], " ")
-	return finalString
-}
-
-func processInput(inputString string) string {
-	args := strings.Fields(inputString)
-	if len(args) == 0 {
-		return ""
-	}
-	switch args[0] {
-	case "exit":
-		return exit(args)
-	case "echo":
-		return echo(args)
-	default:
-		return inputString + ": command not found"
-	}
-
-}
+var commands map[string]CommandFunc
 
 func main() {
-
+	commands = map[string]CommandFunc{
+		"exit": runExit,
+		"echo": runEcho,
+		"type": runType,
+	}
 	for {
 		fmt.Print("$ ")
 		command, err := bufio.NewReader(os.Stdin).ReadString('\n')
@@ -52,7 +25,58 @@ func main() {
 			fmt.Fprintln(os.Stderr, "Error reading input:", err)
 			os.Exit(-1)
 		}
-		fmt.Println(processInput(command))
+		processInput(command)
 	}
 
+}
+
+func runExit(args []string) error {
+	if len(args) == 0 {
+		os.Exit(0)
+	}
+	exitCode, err := strconv.Atoi(args[0])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error converting command to int", err)
+		os.Exit(-1)
+	}
+	os.Exit(exitCode)
+	return nil
+}
+
+func runEcho(args []string) error {
+	argsString := strings.Join(args, " ")
+	fmt.Println(argsString)
+	return nil
+}
+
+func runType(args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	for _, arg := range args {
+		_, exists := commands[arg]
+		if exists {
+			fmt.Println(arg + " is a shell builtin")
+		} else {
+			fmt.Println(arg + ": not found")
+		}
+	}
+	return nil
+}
+
+func processInput(command string) {
+	args := strings.Fields(command)
+	if len(args) == 0 {
+		return
+	}
+	commandArg, ok := commands[args[0]]
+	if ok {
+		err := commandArg(args[1:])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error executing command", err)
+			return
+		}
+		return
+	}
+	fmt.Println(args[0] + ": command not found")
 }
