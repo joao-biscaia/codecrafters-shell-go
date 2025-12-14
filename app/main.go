@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	//"path/filepath"
 )
 
 type CommandFunc func(args []string) error
@@ -68,6 +69,9 @@ func runCd(args []string) error {
 	}
 	destination := args[0]
 	destinationParts := strings.Split(destination, "/")
+	if len(destinationParts[len(destinationParts)-1]) == 0 {
+		destinationParts = destinationParts[:len(destinationParts)-1]
+	}
 
 	switch destinationParts[0] {
 	case "":
@@ -76,10 +80,61 @@ func runCd(args []string) error {
 			return nil
 		}
 		directory = destination
+		err := os.Chdir(directory)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cd: error changing directory", err)
+			return nil
+		}
 		return nil
 	case "~":
-		directory = homeDir + strings.Join(destinationParts[1:], "/")
+		finalPath := homeDir + strings.Join(destinationParts[1:], "/")
+		if _, err := os.Stat(finalPath); errors.Is(err, os.ErrNotExist) {
+			fmt.Println("cd: " + finalPath + ": No such file or directory")
+			return nil
+		}
+		directory = finalPath
+
+		err := os.Chdir(directory)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cd: error changing directory", err)
+			return nil
+		}
 		return nil
+	default:
+		tempDir := directory + "/" + destination
+		info, e := os.Stat(tempDir)
+		if e != nil {
+			fmt.Println("cd: " + destination + ": no such file or directory")
+			return nil
+		}
+		if !(info.IsDir()) {
+			fmt.Println("cd: not a directory: " + destination)
+			return nil
+		}
+		currentDirectoryParts := strings.Split(directory, "/")
+		var tempArray []string = currentDirectoryParts
+		for _, dir := range destinationParts {
+			switch dir {
+			case "..":
+				if len(tempArray) == 1 {
+					continue
+				}
+				tempArray = tempArray[:len(tempArray)-1]
+				break
+			case ".":
+				break
+			default:
+				tempArray = append(tempArray, dir)
+				break
+			}
+		}
+		directory = strings.Join(tempArray, "/")
+		err := os.Chdir(directory)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cd: error changing directory", err)
+			return nil
+		}
+		break
 	}
 
 	return nil
