@@ -92,6 +92,6 @@ func processInput(command string) {
 			fmt.Println(args[0] + ": command not found")
 			return
 		}
-		fmt.Println(out.String())
+		fmt.Print(out.String())
 	}
 }
