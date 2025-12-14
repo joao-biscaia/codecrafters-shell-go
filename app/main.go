@@ -63,6 +63,7 @@ func runType(args []string) error {
 		path, err := exec.LookPath(arg)
 		if err != nil {
 			fmt.Println(arg + ": not found")
+			return nil
 		}
 		fmt.Println(arg + " is " + path)
 	}
