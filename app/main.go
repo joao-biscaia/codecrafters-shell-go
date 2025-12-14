@@ -18,6 +18,7 @@ func main() {
 		"exit": runExit,
 		"echo": runEcho,
 		"type": runType,
+		"pwd":  runPwd,
 	}
 	for {
 		fmt.Print("$ ")
@@ -29,6 +30,20 @@ func main() {
 		processInput(command)
 	}
 
+}
+
+func runPwd(args []string) error {
+	if len(args) > 1 {
+		fmt.Println("pwd: too many arguments")
+		return nil
+	}
+	dir, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error reading current directory ", err)
+		return err
+	}
+	fmt.Println(dir)
+	return nil
 }
 
 func runExit(args []string) error {
@@ -83,15 +98,15 @@ func processInput(command string) {
 			return
 		}
 		return
-	} else {
-		cmd := exec.Command(args[0], args[1:]...)
-		var out strings.Builder
-		cmd.Stdout = &out
-		e := cmd.Run()
-		if e != nil {
-			fmt.Println(args[0] + ": command not found")
-			return
-		}
-		fmt.Print(out.String())
 	}
+
+	cmd := exec.Command(args[0], args[1:]...)
+	var out strings.Builder
+	cmd.Stdout = &out
+	e := cmd.Run()
+	if e != nil {
+		fmt.Println(args[0] + ": command not found")
+		return
+	}
+	fmt.Print(out.String())
 }
