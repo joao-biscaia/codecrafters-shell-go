@@ -84,18 +84,12 @@ func processInput(command string) {
 		}
 		return
 	} else {
-		path, err := exec.LookPath(args[0])
-		if err != nil {
-			fmt.Println(args[0] + ": command not found")
-			return
-		}
-		argsArray := args[1:]
-		cmd := exec.Command(path, argsArray...)
+		cmd := exec.Command(args[0], args[1:]...)
 		var out strings.Builder
 		cmd.Stdout = &out
 		e := cmd.Run()
 		if e != nil {
-			fmt.Fprintln(os.Stderr, "error running command", e)
+			fmt.Println(args[0] + ": command not found")
 			return
 		}
 		fmt.Println(out.String())
