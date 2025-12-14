@@ -83,6 +83,16 @@ func processInput(command string) {
 			return
 		}
 		return
+	} else {
+		path, err := exec.LookPath(args[0])
+		if err != nil {
+			fmt.Println(args[0] + ": command not found")
+			return
+		}
+		output, err := exec.Command(path, strings.Join(args[1:], " ")).Output()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error running command: ", err)
+		}
+		fmt.Println(output)
 	}
-	fmt.Println(args[0] + ": command not found")
 }
