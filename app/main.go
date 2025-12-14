@@ -89,10 +89,15 @@ func processInput(command string) {
 			fmt.Println(args[0] + ": command not found")
 			return
 		}
-		output, err := exec.Command(path, strings.Join(args[1:], " ")).Output()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error running command: ", err)
+		argsArray := args[1:]
+		cmd := exec.Command(path, argsArray...)
+		var out strings.Builder
+		cmd.Stdout = &out
+		e := cmd.Run()
+		if e != nil {
+			fmt.Fprintln(os.Stderr, "error running command", e)
+			return
 		}
-		fmt.Println(output)
+		fmt.Println(out.String())
 	}
 }
