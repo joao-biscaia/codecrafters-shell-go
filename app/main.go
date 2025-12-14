@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,13 +14,23 @@ type CommandFunc func(args []string) error
 
 var commands map[string]CommandFunc
 
+var directory string
+var dirError error
+
 func main() {
 	commands = map[string]CommandFunc{
 		"exit": runExit,
 		"echo": runEcho,
 		"type": runType,
 		"pwd":  runPwd,
+		"cd":   runCd,
 	}
+
+	directory, dirError = os.Getwd()
+	if dirError != nil {
+		fmt.Fprintln(os.Stderr, "error reading current directory ", dirError)
+	}
+
 	for {
 		fmt.Print("$ ")
 		command, err := bufio.NewReader(os.Stdin).ReadString('\n')
@@ -37,13 +48,42 @@ func runPwd(args []string) error {
 		fmt.Println("pwd: too many arguments")
 		return nil
 	}
-	dir, err := os.Getwd()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error reading current directory ", err)
-		return err
-	}
-	fmt.Println(dir)
+	fmt.Println(directory)
 	return nil
+}
+
+func runCd(args []string) error {
+	if len(args) > 1 {
+		fmt.Println("cd: too many arguments")
+		return nil
+	}
+	homeDir, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error reading current directory ", dirError)
+		return dirError
+	}
+	if len(args) == 0 {
+		directory = homeDir
+		return nil
+	}
+	destination := args[0]
+	destinationParts := strings.Split(destination, "/")
+
+	switch destinationParts[0] {
+	case "":
+		if _, err := os.Stat(destination); errors.Is(err, os.ErrNotExist) {
+			fmt.Println("cd: " + destination + ": No such file or directory")
+			return nil
+		}
+		directory = destination
+		return nil
+	case "~":
+		directory = homeDir + strings.Join(destinationParts[1:], "/")
+		return nil
+	}
+
+	return nil
+
 }
 
 func runExit(args []string) error {
