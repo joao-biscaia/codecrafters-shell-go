@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 )
@@ -57,9 +58,13 @@ func runType(args []string) error {
 		_, exists := commands[arg]
 		if exists {
 			fmt.Println(arg + " is a shell builtin")
-		} else {
+			return nil
+		}
+		path, err := exec.LookPath(arg)
+		if err != nil {
 			fmt.Println(arg + ": not found")
 		}
+		fmt.Println(arg + " is " + path)
 	}
 	return nil
 }
