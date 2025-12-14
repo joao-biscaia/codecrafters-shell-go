@@ -58,7 +58,7 @@ func runCd(args []string) error {
 		fmt.Println("cd: too many arguments")
 		return nil
 	}
-	homeDir, err := os.Getwd()
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error reading current directory ", dirError)
 		return dirError
