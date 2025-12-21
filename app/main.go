@@ -4,11 +4,11 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"github.com/google/shlex"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
-	//"path/filepath"
 )
 
 type CommandFunc func(args []string) error
@@ -181,7 +181,11 @@ func runType(args []string) error {
 }
 
 func processInput(command string) {
-	args := strings.Fields(command)
+	args, err := shlex.Split(command)
+	if err != nil {
+		fmt.Println(command + ": error reading command arguments.")
+		return
+	}
 	if len(args) == 0 {
 		return
 	}
