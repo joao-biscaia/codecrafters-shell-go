@@ -8,8 +8,6 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-
-	"github.com/google/shlex"
 )
 
 type CommandFunc func(args []string) error
@@ -181,12 +179,74 @@ func runType(args []string) error {
 	return nil
 }
 
-func processInput(command string) {
-	var args, err = shlex.Split(command)
-	if err != nil {
-		fmt.Println(command + ": error reading command arguments.")
-		return
+func splitArgs(input string) []string {
+	var args []string
+	var currentArg strings.Builder
+
+	inSingleQuote := false
+	inDoubleQuote := false
+	isEscaped := false
+
+	//Escape
+	for _, r := range input {
+		if isEscaped {
+			if inDoubleQuote {
+				switch r {
+				case '$', '"', '\\', '\n':
+					currentArg.WriteRune(r)
+				default:
+					currentArg.WriteRune('\\')
+					currentArg.WriteRune(r)
+				}
+			} else {
+				currentArg.WriteRune(r)
+			}
+			isEscaped = false
+			continue
+		}
+		if r == '\\' {
+			if !inSingleQuote {
+				isEscaped = true
+				continue
+			}
+		}
+		//Single quotes
+		if r == '\'' && !inDoubleQuote {
+			inSingleQuote = !inSingleQuote
+			continue
+		}
+		//Double quotes
+		if r == '"' && !inSingleQuote {
+			inDoubleQuote = !inDoubleQuote
+			continue
+		}
+		//Space
+		if r == ' ' || r == '\t' {
+			if inSingleQuote || inDoubleQuote {
+				currentArg.WriteRune(r)
+			} else {
+
+				if currentArg.Len() > 0 {
+					args = append(args, currentArg.String())
+					currentArg.Reset()
+				}
+			}
+			continue
+
+		}
+
+		currentArg.WriteRune(r)
 	}
+
+	if currentArg.Len() > 0 {
+		args = append(args, currentArg.String())
+	}
+
+	return args
+}
+
+func processInput(command string) {
+	var args = splitArgs(command[:len(command)-1])
 	if len(args) == 0 {
 		return
 	}
@@ -205,7 +265,7 @@ func processInput(command string) {
 	cmd.Stdout = &out
 	e := cmd.Run()
 	if e != nil {
-		fmt.Println(e.Error())
+		fmt.Println(command[:len(command)-1] + ": command not found")
 		return
 	}
 	fmt.Print(out.String())
