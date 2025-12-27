@@ -4,11 +4,12 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"github.com/google/shlex"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/google/shlex"
 )
 
 type CommandFunc func(args []string) error
@@ -181,7 +182,7 @@ func runType(args []string) error {
 }
 
 func processInput(command string) {
-	args, err := shlex.Split(command)
+	var args, err = shlex.Split(command)
 	if err != nil {
 		fmt.Println(command + ": error reading command arguments.")
 		return
@@ -189,6 +190,7 @@ func processInput(command string) {
 	if len(args) == 0 {
 		return
 	}
+
 	commandArg, ok := commands[args[0]]
 	if ok {
 		err := commandArg(args[1:])
@@ -198,13 +200,12 @@ func processInput(command string) {
 		}
 		return
 	}
-
 	cmd := exec.Command(args[0], args[1:]...)
 	var out strings.Builder
 	cmd.Stdout = &out
 	e := cmd.Run()
 	if e != nil {
-		fmt.Println(args[0] + ": command not found")
+		fmt.Println(e.Error())
 		return
 	}
 	fmt.Print(out.String())
