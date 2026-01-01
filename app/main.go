@@ -4,66 +4,174 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 )
 
-type CommandFunc func(args []string) error
+type IShell interface {
+	splitArgs()
+	execute()
+	getWorkingDir()
+}
 
-var commands map[string]CommandFunc
+type ParsedCommand struct {
+	name   string
+	args   []string
+	stdout io.Writer
+	stderr io.Writer
+}
 
-var directory string
-var dirError error
+type CommandFunc func(sh *Shell, ctx *ExecContext, args []string) error
+
+type ExecContext struct {
+	stdin  io.Reader
+	stdout io.Writer
+	stderr io.Writer
+}
+
+type Shell struct {
+	workingDirectory string
+	builtinCommands  map[string]CommandFunc
+}
 
 func main() {
-	commands = map[string]CommandFunc{
-		"exit": runExit,
-		"echo": runEcho,
-		"type": runType,
-		"pwd":  runPwd,
-		"cd":   runCd,
-	}
+	dir, _ := os.Getwd()
 
-	directory, dirError = os.Getwd()
-	if dirError != nil {
-		fmt.Fprintln(os.Stderr, "error reading current directory ", dirError)
-	}
+	shell := &Shell{workingDirectory: dir,
+		builtinCommands: map[string]CommandFunc{
+			"pwd":  (*Shell).runPwd,
+			"cd":   (*Shell).runCd,
+			"exit": (*Shell).runExit,
+			"echo": (*Shell).runEcho,
+			"type": (*Shell).runType,
+		}}
 
+	shell.execute()
+
+}
+
+func (sh *Shell) execute() {
 	for {
 		fmt.Print("$ ")
+
 		command, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		context := &ExecContext{
+			stdin:  os.Stdin,
+			stdout: os.Stdout,
+			stderr: os.Stderr,
+		}
+
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "Error reading input:", err)
+			errorString := "Error reading input: " + err.Error()
+			_, err := context.stderr.Write([]byte(errorString))
+			if err != nil {
+				os.Exit(-1)
+			}
 			os.Exit(-1)
 		}
-		processInput(command)
+
+		sh.processInput(context, command)
+	}
+}
+func (sh *Shell) parseCommand(context *ExecContext, args []string) ParsedCommand {
+
+	parsedArgs := ParsedCommand{
+		name:   args[0],
+		args:   args,
+		stdout: context.stdout,
+		stderr: context.stderr,
+	}
+	var fileOut string
+	for idx, arg := range args {
+		if ((arg == ">") || (arg == "1>")) && idx < (len(args)-1) {
+			parsedArgs.args = args[:idx]
+			fileOut = args[idx+1]
+			file, _ := os.Create(fileOut)
+			parsedArgs.stdout = file
+			return parsedArgs
+		}
+	}
+
+	return parsedArgs
+
+}
+
+func (sh *Shell) processInput(context *ExecContext, command string) {
+
+	var args = splitArgs(command[:len(command)-1])
+	if len(args) == 0 {
+		return
+	}
+	parsedArgs := sh.parseCommand(context, args)
+	args = parsedArgs.args
+	context.stdout = parsedArgs.stdout
+	context.stderr = parsedArgs.stderr
+
+	commandArg, ok := sh.builtinCommands[args[0]]
+	if ok {
+		err := commandArg(sh, context, args[1:])
+		if err != nil {
+			_, err := context.stderr.Write([]byte("Error executing command\n"))
+			if err != nil {
+				os.Exit(-1)
+				return
+			}
+			return
+		}
+		return
+	}
+	cmd := exec.Command(parsedArgs.name, args[1:]...)
+	var out strings.Builder
+	var cmdErr strings.Builder
+	cmd.Stdout = &out
+	cmd.Stderr = &cmdErr
+
+	err := cmd.Run()
+
+	if out.Len() > 0 {
+		fmt.Fprint(context.stdout, out.String())
+	}
+
+	if cmdErr.Len() > 0 {
+		fmt.Fprint(context.stderr, cmdErr.String())
+	}
+
+	if err != nil {
+		var exitError *exec.ExitError
+		if !errors.As(err, &exitError) {
+			fmt.Fprintf(context.stderr, "%s: command not found\n", parsedArgs.name)
+		}
 	}
 
 }
 
-func runPwd(args []string) error {
+func (sh *Shell) runPwd(context *ExecContext, args []string) error {
 	if len(args) > 1 {
-		fmt.Println("pwd: too many arguments")
+		context.stderr.Write([]byte("pwd: too many arguments\n"))
 		return nil
 	}
-	fmt.Println(directory)
+	_, err := context.stdout.Write([]byte(sh.workingDirectory + "\n"))
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
-func runCd(args []string) error {
+func (sh *Shell) runCd(context *ExecContext, args []string) error {
 	if len(args) > 1 {
-		fmt.Println("cd: too many arguments")
+		fmt.Fprintln(context.stderr, "cd: too many arguments")
 		return nil
 	}
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error reading current directory ", dirError)
-		return dirError
+		fmt.Fprintln(context.stderr, "error reading current directory ")
+		return nil
 	}
 	if len(args) == 0 {
-		directory = homeDir
+		sh.workingDirectory = homeDir
 		return nil
 	}
 	destination := args[0]
@@ -75,42 +183,42 @@ func runCd(args []string) error {
 	switch destinationParts[0] {
 	case "":
 		if _, err := os.Stat(destination); errors.Is(err, os.ErrNotExist) {
-			fmt.Println("cd: " + destination + ": No such file or directory")
+			fmt.Fprintln(context.stderr, "cd: "+destination+": No such file or directory")
 			return nil
 		}
-		directory = destination
-		err := os.Chdir(directory)
+		sh.workingDirectory = destination
+		err := os.Chdir(sh.workingDirectory)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "cd: error changing directory", err)
+			fmt.Fprintln(context.stderr, "cd: error changing directory")
 			return nil
 		}
 		return nil
 	case "~":
 		finalPath := homeDir + strings.Join(destinationParts[1:], "/")
 		if _, err := os.Stat(finalPath); errors.Is(err, os.ErrNotExist) {
-			fmt.Println("cd: " + finalPath + ": No such file or directory")
+			fmt.Fprintln(context.stderr, "cd: "+finalPath+": No such file or directory")
 			return nil
 		}
-		directory = finalPath
+		sh.workingDirectory = finalPath
 
-		err := os.Chdir(directory)
+		err := os.Chdir(sh.workingDirectory)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "cd: error changing directory", err)
+			fmt.Fprintln(context.stderr, "cd: error changing directory")
 			return nil
 		}
 		return nil
 	default:
-		tempDir := directory + "/" + destination
+		tempDir := sh.workingDirectory + "/" + destination
 		info, e := os.Stat(tempDir)
 		if e != nil {
-			fmt.Println("cd: " + destination + ": no such file or directory")
+			fmt.Fprintln(context.stderr, "cd: "+destination+": no such file or directory")
 			return nil
 		}
 		if !(info.IsDir()) {
-			fmt.Println("cd: not a directory: " + destination)
+			fmt.Fprintln(context.stderr, "cd: not a directory: "+destination)
 			return nil
 		}
-		currentDirectoryParts := strings.Split(directory, "/")
+		currentDirectoryParts := strings.Split(sh.workingDirectory, "/")
 		var tempArray []string = currentDirectoryParts
 		for _, dir := range destinationParts {
 			switch dir {
@@ -127,54 +235,53 @@ func runCd(args []string) error {
 				break
 			}
 		}
-		directory = strings.Join(tempArray, "/")
-		err := os.Chdir(directory)
+		sh.workingDirectory = strings.Join(tempArray, "/")
+		err := os.Chdir(sh.workingDirectory)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "cd: error changing directory", err)
+			fmt.Fprintln(context.stderr, "cd: error changing directory")
 			return nil
 		}
 		break
 	}
 
 	return nil
-
 }
 
-func runExit(args []string) error {
+func (sh *Shell) runExit(context *ExecContext, args []string) error {
 	if len(args) == 0 {
 		os.Exit(0)
 	}
 	exitCode, err := strconv.Atoi(args[0])
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error converting command to int", err)
+		fmt.Fprintln(context.stderr, "Error exiting program with code"+err.Error())
 		os.Exit(-1)
 	}
 	os.Exit(exitCode)
 	return nil
 }
 
-func runEcho(args []string) error {
+func (sh *Shell) runEcho(context *ExecContext, args []string) error {
 	argsString := strings.Join(args, " ")
-	fmt.Println(argsString)
+	fmt.Fprintln(context.stdout, argsString)
 	return nil
 }
 
-func runType(args []string) error {
+func (sh *Shell) runType(context *ExecContext, args []string) error {
 	if len(args) == 0 {
 		return nil
 	}
 	for _, arg := range args {
-		_, exists := commands[arg]
+		_, exists := sh.builtinCommands[arg]
 		if exists {
-			fmt.Println(arg + " is a shell builtin")
+			fmt.Fprintln(context.stdout, arg+" is a shell builtin")
 			return nil
 		}
 		path, err := exec.LookPath(arg)
 		if err != nil {
-			fmt.Println(arg + ": not found")
+			fmt.Fprintln(context.stderr, arg+": not found")
 			return nil
 		}
-		fmt.Println(arg + " is " + path)
+		fmt.Fprintln(context.stdout, arg+" is "+path)
 	}
 	return nil
 }
@@ -243,30 +350,4 @@ func splitArgs(input string) []string {
 	}
 
 	return args
-}
-
-func processInput(command string) {
-	var args = splitArgs(command[:len(command)-1])
-	if len(args) == 0 {
-		return
-	}
-
-	commandArg, ok := commands[args[0]]
-	if ok {
-		err := commandArg(args[1:])
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "Error executing command", err)
-			return
-		}
-		return
-	}
-	cmd := exec.Command(args[0], args[1:]...)
-	var out strings.Builder
-	cmd.Stdout = &out
-	e := cmd.Run()
-	if e != nil {
-		fmt.Println(command[:len(command)-1] + ": command not found")
-		return
-	}
-	fmt.Print(out.String())
 }
