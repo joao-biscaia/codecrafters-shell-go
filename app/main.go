@@ -103,6 +103,13 @@ func (sh *Shell) parseCommand(context *ExecContext, args []string) ParsedCommand
 				parsedArgs.args = args[:idx]
 				redirected = true
 			}
+		} else if ((arg == ">>") || (arg == "1>>")) && idx < (len(args)-1) {
+			file, _ := os.OpenFile(args[idx+1], os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+			parsedArgs.stdout = file
+			if !redirected {
+				parsedArgs.args = args[:idx]
+				redirected = true
+			}
 		}
 	}
 
