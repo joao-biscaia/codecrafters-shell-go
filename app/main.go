@@ -85,13 +85,24 @@ func (sh *Shell) parseCommand(context *ExecContext, args []string) ParsedCommand
 		stderr: context.stderr,
 	}
 	var fileOut string
+
+	var redirected bool = false
 	for idx, arg := range args {
 		if ((arg == ">") || (arg == "1>")) && idx < (len(args)-1) {
-			parsedArgs.args = args[:idx]
+			if !redirected {
+				parsedArgs.args = args[:idx]
+				redirected = true
+			}
 			fileOut = args[idx+1]
 			file, _ := os.Create(fileOut)
 			parsedArgs.stdout = file
-			return parsedArgs
+		} else if (arg == "2>") && idx < (len(args)-1) {
+			file, _ := os.Create(args[idx+1])
+			parsedArgs.stderr = file
+			if !redirected {
+				parsedArgs.args = args[:idx]
+				redirected = true
+			}
 		}
 	}
 
