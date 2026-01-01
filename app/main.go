@@ -86,7 +86,7 @@ func (sh *Shell) parseCommand(context *ExecContext, args []string) ParsedCommand
 	}
 	var fileOut string
 
-	var redirected bool = false
+	var redirected = false
 	for idx, arg := range args {
 		if ((arg == ">") || (arg == "1>")) && idx < (len(args)-1) {
 			if !redirected {
@@ -106,6 +106,13 @@ func (sh *Shell) parseCommand(context *ExecContext, args []string) ParsedCommand
 		} else if ((arg == ">>") || (arg == "1>>")) && idx < (len(args)-1) {
 			file, _ := os.OpenFile(args[idx+1], os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 			parsedArgs.stdout = file
+			if !redirected {
+				parsedArgs.args = args[:idx]
+				redirected = true
+			}
+		} else if ((arg == ">>") || (arg == "2>>")) && idx < (len(args)-1) {
+			file, _ := os.OpenFile(args[idx+1], os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+			parsedArgs.stderr = file
 			if !redirected {
 				parsedArgs.args = args[:idx]
 				redirected = true
