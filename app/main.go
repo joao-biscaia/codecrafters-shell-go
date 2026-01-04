@@ -1,9 +1,9 @@
 package main
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
+	"github.com/chzyer/readline"
 	"io"
 	"os"
 	"os/exec"
@@ -57,12 +57,25 @@ func (sh *Shell) execute() {
 	for {
 		fmt.Print("$ ")
 
-		command, err := bufio.NewReader(os.Stdin).ReadString('\n')
 		context := &ExecContext{
 			stdin:  os.Stdin,
 			stdout: os.Stdout,
 			stderr: os.Stderr,
 		}
+
+		completer := readline.NewPrefixCompleter(
+			readline.PcItem("echo"),
+			readline.PcItem("exit"),
+			readline.PcItem("cd"),
+			readline.PcItem("pwd"),
+			readline.PcItem("type"),
+		)
+		rlInstance, _ := readline.NewEx(&readline.Config{
+			Prompt:       "$ ",
+			AutoComplete: completer,
+		})
+
+		command, err := rlInstance.Readline()
 
 		if err != nil {
 			errorString := "Error reading input: " + err.Error()
@@ -73,9 +86,10 @@ func (sh *Shell) execute() {
 			os.Exit(-1)
 		}
 
-		sh.processInput(context, command)
+		sh.processInput(context, string(command))
 	}
 }
+
 func (sh *Shell) parseCommand(context *ExecContext, args []string) ParsedCommand {
 
 	parsedArgs := ParsedCommand{
@@ -111,7 +125,7 @@ func (sh *Shell) parseCommand(context *ExecContext, args []string) ParsedCommand
 				redirected = true
 			}
 		} else if ((arg == ">>") || (arg == "2>>")) && idx < (len(args)-1) {
-			file, _ := os.OpenFile(args[idx+1], os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+			file, _ := os.OpenFile(args[idx+1], os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0666)
 			parsedArgs.stderr = file
 			if !redirected {
 				parsedArgs.args = args[:idx]
@@ -126,7 +140,7 @@ func (sh *Shell) parseCommand(context *ExecContext, args []string) ParsedCommand
 
 func (sh *Shell) processInput(context *ExecContext, command string) {
 
-	var args = splitArgs(command[:len(command)-1])
+	var args = splitArgs(command)
 	if len(args) == 0 {
 		return
 	}
