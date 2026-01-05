@@ -37,6 +37,20 @@ type Shell struct {
 	builtinCommands  map[string]CommandFunc
 }
 
+type AutoCompleter struct {
+	completer readline.AutoCompleter
+}
+
+func (auto *AutoCompleter) Do(line []rune, pos int) ([][]rune, int) {
+	newLine, length := auto.completer.Do(line, pos)
+
+	if length == 0 && len(line) > 0 {
+		fmt.Print("\a")
+	}
+
+	return newLine, length
+}
+
 func main() {
 	dir, _ := os.Getwd()
 
@@ -54,6 +68,15 @@ func main() {
 }
 
 func (sh *Shell) execute() {
+	completer := readline.NewPrefixCompleter(
+		readline.PcItem("echo"),
+		readline.PcItem("exit"),
+		readline.PcItem("cd"),
+		readline.PcItem("pwd"),
+		readline.PcItem("type"),
+	)
+
+	customCompleter := &AutoCompleter{completer: completer}
 	for {
 		fmt.Print("$ ")
 
@@ -63,16 +86,9 @@ func (sh *Shell) execute() {
 			stderr: os.Stderr,
 		}
 
-		completer := readline.NewPrefixCompleter(
-			readline.PcItem("echo"),
-			readline.PcItem("exit"),
-			readline.PcItem("cd"),
-			readline.PcItem("pwd"),
-			readline.PcItem("type"),
-		)
 		rlInstance, _ := readline.NewEx(&readline.Config{
 			Prompt:       "$ ",
-			AutoComplete: completer,
+			AutoComplete: customCompleter,
 		})
 
 		command, err := rlInstance.Readline()
