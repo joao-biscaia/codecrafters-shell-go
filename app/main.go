@@ -3,19 +3,15 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/chzyer/readline"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
-)
 
-type IShell interface {
-	splitArgs()
-	execute()
-	getWorkingDir()
-}
+	"github.com/chzyer/readline"
+)
 
 type ParsedCommand struct {
 	name   string
@@ -45,10 +41,40 @@ func (auto *AutoCompleter) Do(line []rune, pos int) ([][]rune, int) {
 	newLine, length := auto.completer.Do(line, pos)
 
 	if length == 0 && len(line) > 0 {
+		pathFilled, posPath := getPathAutofill(string(line))
+		if len(pathFilled) > 0 && posPath > 0 {
+			return pathFilled, posPath
+		}
 		fmt.Print("\a")
 	}
 
 	return newLine, length
+}
+
+func getPathAutofill(inputPath string) ([][]rune, int) {
+	path := os.Getenv("PATH")
+	pathDirectories := strings.Split(path, string(os.PathListSeparator))
+
+	var autofillMatches [][]rune
+	inputDirs := strings.Split(inputPath, "/")
+	inputDirectory := inputDirs[:len(inputDirs)-1]
+	joinedInputDirectory := strings.Join(inputDirectory, "/")
+	inputAutofill := inputDirs[len(inputDirs)-1]
+	sizeAutofill := len(inputAutofill)
+
+	for _, pathDirectory := range pathDirectories {
+		fullDir := filepath.Join(pathDirectory, joinedInputDirectory)
+		if filesInDir, err := os.ReadDir(fullDir); !errors.Is(err, os.ErrNotExist) {
+			for _, file := range filesInDir {
+				if !file.IsDir() && (len(file.Name()) >= sizeAutofill) && (file.Name()[:sizeAutofill] == inputAutofill) {
+					fullPath := []rune(file.Name()[sizeAutofill:] + " ")
+					autofillMatches = append(autofillMatches, fullPath)
+				}
+			}
+		}
+	}
+	return autofillMatches, sizeAutofill
+
 }
 
 func main() {
@@ -68,6 +94,7 @@ func main() {
 }
 
 func (sh *Shell) execute() {
+
 	completer := readline.NewPrefixCompleter(
 		readline.PcItem("echo"),
 		readline.PcItem("exit"),
