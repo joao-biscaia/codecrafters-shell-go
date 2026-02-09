@@ -6,7 +6,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -35,46 +36,89 @@ type Shell struct {
 
 type AutoCompleter struct {
 	completer readline.AutoCompleter
+	tabCount  int
+	lastInput string
 }
 
 func (auto *AutoCompleter) Do(line []rune, pos int) ([][]rune, int) {
 	newLine, length := auto.completer.Do(line, pos)
 
-	if length == 0 && len(line) > 0 {
-		pathFilled, posPath := getPathAutofill(string(line))
-		if len(pathFilled) > 0 && posPath > 0 {
-			return pathFilled, posPath
+	currentInput := string(line)
+	if currentInput != auto.lastInput {
+		auto.tabCount = 0
+		auto.lastInput = currentInput
+	}
+
+	if len(newLine) == 1 {
+		auto.tabCount = 0
+		fmt.Print(string(newLine[0]))
+		return newLine, length
+	}
+
+	if len(newLine) > 1 {
+		auto.tabCount++
+		if auto.tabCount == 1 {
+			fmt.Print("\x07")
+			return [][]rune{}, 0
 		}
-		fmt.Print("\a")
+		fmt.Print("\n")
+		for _, match := range newLine {
+			prefix := string(line[:pos])
+			fmt.Print(prefix + strings.TrimRight(string(match), " ") + "  ")
+		}
+		fmt.Print("\n")
+		fmt.Print("$ " + string(line))
+		auto.tabCount = 0
+		return [][]rune{}, 0
+	}
+
+	if len(newLine) == 0 {
+		fmt.Print("\x07")
 	}
 
 	return newLine, length
 }
 
-func getPathAutofill(inputPath string) ([][]rune, int) {
+func getPathExecutables() [][]rune {
 	path := os.Getenv("PATH")
 	pathDirectories := strings.Split(path, string(os.PathListSeparator))
-
-	var autofillMatches [][]rune
-	inputDirs := strings.Split(inputPath, "/")
-	inputDirectory := inputDirs[:len(inputDirs)-1]
-	joinedInputDirectory := strings.Join(inputDirectory, "/")
-	inputAutofill := inputDirs[len(inputDirs)-1]
-	sizeAutofill := len(inputAutofill)
+	var pathExecutables [][]rune
 
 	for _, pathDirectory := range pathDirectories {
-		fullDir := filepath.Join(pathDirectory, joinedInputDirectory)
-		if filesInDir, err := os.ReadDir(fullDir); !errors.Is(err, os.ErrNotExist) {
+		if filesInDir, err := os.ReadDir(pathDirectory); !errors.Is(err, os.ErrNotExist) {
 			for _, file := range filesInDir {
-				if !file.IsDir() && (len(file.Name()) >= sizeAutofill) && (file.Name()[:sizeAutofill] == inputAutofill) {
-					fullPath := []rune(file.Name()[sizeAutofill:] + " ")
-					autofillMatches = append(autofillMatches, fullPath)
+				if !file.IsDir() {
+					pathExecutables = append(pathExecutables, []rune(file.Name()))
 				}
 			}
 		}
 	}
-	return autofillMatches, sizeAutofill
 
+	sort.Slice(pathExecutables, func(i, j int) bool { return string(pathExecutables[i]) < string(pathExecutables[j]) })
+
+	return pathExecutables
+}
+
+func createPathExecsItems(pathExecs [][]rune) *readline.PrefixCompleter {
+	var items []readline.PrefixCompleterInterface
+
+	items = append(items,
+		readline.PcItem("echo"),
+		readline.PcItem("exit"),
+		readline.PcItem("cd"),
+		readline.PcItem("pwd"),
+		readline.PcItem("type"),
+	)
+
+	cmdArray := []string{"echo", "exit", "cd", "pwd", "type"}
+
+	for _, pathExec := range pathExecs {
+		if !slices.Contains(cmdArray, string(pathExec)) {
+			items = append(items, readline.PcItem(string(pathExec)))
+		}
+	}
+
+	return readline.NewPrefixCompleter(items...)
 }
 
 func main() {
@@ -95,13 +139,8 @@ func main() {
 
 func (sh *Shell) execute() {
 
-	completer := readline.NewPrefixCompleter(
-		readline.PcItem("echo"),
-		readline.PcItem("exit"),
-		readline.PcItem("cd"),
-		readline.PcItem("pwd"),
-		readline.PcItem("type"),
-	)
+	pathExecs := getPathExecutables()
+	completer := createPathExecsItems(pathExecs)
 
 	customCompleter := &AutoCompleter{completer: completer}
 	for {
@@ -129,7 +168,7 @@ func (sh *Shell) execute() {
 			os.Exit(-1)
 		}
 
-		sh.processInput(context, string(command))
+		sh.processInput(context, command)
 	}
 }
 
