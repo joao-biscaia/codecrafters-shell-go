@@ -40,6 +40,34 @@ type AutoCompleter struct {
 	lastInput string
 }
 
+func (auto *AutoCompleter) findSort(newLine [][]rune) ([]rune, int) {
+	if len(newLine) < 2 {
+		return nil, 0
+	}
+	stringArray := make([]string, len(newLine))
+	for i, l := range newLine {
+		stringArray[i] = string(l)
+	}
+
+	slices.SortFunc(stringArray, func(a, b string) int {
+		if len(a) < len(b) {
+			return -1
+		}
+		if len(a) > len(b) {
+			return 1
+		}
+
+		return 0
+	})
+	for _, el := range stringArray[1:] {
+		if !strings.Contains(el, stringArray[0][:len(stringArray[0])-1]) {
+			return nil, 0
+		}
+	}
+	return []rune(stringArray[0]), len(stringArray[0])
+
+}
+
 func (auto *AutoCompleter) Do(line []rune, pos int) ([][]rune, int) {
 	newLine, length := auto.completer.Do(line, pos)
 
@@ -56,6 +84,13 @@ func (auto *AutoCompleter) Do(line []rune, pos int) ([][]rune, int) {
 	}
 
 	if len(newLine) > 1 {
+		autoFillMatch, size := auto.findSort(newLine)
+		if autoFillMatch != nil {
+			fmt.Print(autoFillMatch)
+			auto.lastInput = auto.lastInput + string(autoFillMatch)
+			return newLine, pos + size
+		}
+
 		auto.tabCount++
 		if auto.tabCount == 1 {
 			fmt.Print("\x07")
