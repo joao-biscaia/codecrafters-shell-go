@@ -19,6 +19,7 @@ type ParsedCommand struct {
 	args   []string
 	stdout io.Writer
 	stderr io.Writer
+	stdin  io.Reader
 }
 
 type CommandFunc func(sh *Shell, ctx *ExecContext, args []string) error
@@ -214,6 +215,7 @@ func (sh *Shell) parseCommand(context *ExecContext, args []string) ParsedCommand
 		args:   args,
 		stdout: context.stdout,
 		stderr: context.stderr,
+		stdin:  context.stdin,
 	}
 	var fileOut string
 
@@ -254,14 +256,9 @@ func (sh *Shell) parseCommand(context *ExecContext, args []string) ParsedCommand
 	return parsedArgs
 
 }
-
-func (sh *Shell) processInput(context *ExecContext, command string) {
-
-	var args = splitArgs(command)
-	if len(args) == 0 {
-		return
-	}
+func (sh *Shell) runPipe(context *ExecContext, args []string) {
 	parsedArgs := sh.parseCommand(context, args)
+
 	args = parsedArgs.args
 	context.stdout = parsedArgs.stdout
 	context.stderr = parsedArgs.stderr
@@ -301,7 +298,24 @@ func (sh *Shell) processInput(context *ExecContext, command string) {
 			fmt.Fprintf(context.stderr, "%s: command not found\n", parsedArgs.name)
 		}
 	}
+}
 
+func (sh *Shell) processInput(context *ExecContext, command string) {
+
+	var pipe = splitArgs(command)
+	if len(pipe) == 0 || len(pipe[0]) == 0 {
+		return
+	}
+	r, w := io.Pipe()
+	for _, args := range pipe {
+		context.stdin = r
+		context.stdout = w
+		go sh.runPipe(context, args)
+	}
+	w.Close()
+	r.Close()
+	context.stdin = os.Stdin
+	context.stdout = os.Stdout
 }
 
 func (sh *Shell) runPwd(context *ExecContext, args []string) error {
@@ -442,7 +456,9 @@ func (sh *Shell) runType(context *ExecContext, args []string) error {
 	return nil
 }
 
-func splitArgs(input string) []string {
+func splitArgs(input string) [][]string {
+	// create array of commands - separated by |
+	var commandPipes [][]string
 	var args []string
 	var currentArg strings.Builder
 
@@ -497,7 +513,15 @@ func splitArgs(input string) []string {
 			continue
 
 		}
-
+		if r == '|' && len(currentArg.String()) == 0 {
+			if currentArg.Len() > 0 {
+				args = append(args, currentArg.String())
+				currentArg.Reset()
+			}
+			commandPipes = append(commandPipes, args)
+			args = args[:0]
+			continue
+		}
 		currentArg.WriteRune(r)
 	}
 
@@ -505,5 +529,9 @@ func splitArgs(input string) []string {
 		args = append(args, currentArg.String())
 	}
 
-	return args
+	if len(args) > 0 {
+		commandPipes = append(commandPipes, args)
+	}
+
+	return commandPipes
 }
